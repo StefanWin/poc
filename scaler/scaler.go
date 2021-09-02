@@ -73,7 +73,8 @@ func (scaler *Scaler) Start() error {
 	scaler.isRunning = true
 	log.Println("[scaler]:: starting main loop")
 	for scaler.isRunning {
-		start, remove := scaler.Evaluate()
+		// start, remove := scaler.Evaluate()
+		log.Println("=== Check =======================")
 		for _, worker := range scaler.Workers {
 			worker.Update(scaler.DockerClient)
 			if !worker.IsHealthy() {
@@ -81,20 +82,41 @@ func (scaler *Scaler) Start() error {
 				// TODO : remove unhealthy containers
 			}
 		}
-		// TODO : dispatch requests to workers
-		// TODO : fetch status updates from workers
-		// TODO : fetch files from workers
-
+		log.Println("[scaler]:: updated worker container info")
 		pendingRequests := len(scaler.RequestChannel)
-		log.Printf(
-			"[scaler]:: [Q:%d] [W:%d] [S:%d|R:%d]\n",
-			pendingRequests,
-			len(scaler.Workers),
-			start,
-			remove,
-		)
+		log.Printf("[scaler]:: %d requests in queue\n", pendingRequests)
+		if pendingRequests > 0 {
+			idleWorkers := make([]*Worker, 0)
+			for _, worker := range scaler.Workers {
+				if worker.GetRequestCount() == 0 {
+					idleWorkers = append(idleWorkers, worker)
+				}
+			}
+			idleWorkerCount := len(idleWorkers)
+			log.Printf("[scaler]:: %d available idle workers\n", idleWorkerCount)
+			requests := make([]api.ConversionRequest, 0)
+			for i := 0; i < idleWorkerCount-pendingRequests; i++ {
+				request := <-scaler.RequestChannel
+				requests = append(requests, request)
+			}
+			// TODO : dispatch requests to workers
+			for i, req := range requests {
+				idleWorkers[i].DispatchRequest(req)
+			}
+			log.Printf("[scaler]:: dispatched %d requests to workers\n", len(requests))
+		}
+
+		// TODO : fetch status updates from workers
+		for _, worker := range scaler.Workers {
+			worker.UpdateStatus()
+		}
+		log.Println("[scaler]:: retrieved status updates from workers")
+
+		// TODO : fetch files from workers
+		log.Println("=================================")
 		time.Sleep(time.Second * 10)
 	}
+	log.Println("[scaler]:: main loop exited")
 	return nil
 }
 

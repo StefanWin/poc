@@ -1,4 +1,4 @@
-WEBSERVICE_PORT=3000
+WEBSERVICE_PORT=3001
 FFMPEG_PATH=/opt/ffmpeg/bin/ffmpeg
 IMAGE_MAGICK_PATH=/usr/bin/convert
 UNOCONV_PATH=/usr/local/bin/unoconv

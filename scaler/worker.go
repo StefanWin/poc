@@ -2,21 +2,25 @@ package scaler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
 
+	"github.com/StefanWin/dcv/api"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 )
 
 type Worker struct {
-	ID   string
-	Name string
-	Info types.ContainerJSON
+	ID       string
+	Name     string
+	Info     types.ContainerJSON
+	Requests []*api.ConversionRequest
 }
 
 func StartWorkerAsync(wg *sync.WaitGroup, ch chan<- *Worker, docker *client.Client, idx int, name string, image string) {
@@ -80,5 +84,42 @@ func (worker *Worker) IsHealthy() bool {
 			}
 		}
 	}
-	return false
+	// TODO : investigate why the state can be nil
+	return true
+}
+
+func (worker *Worker) DispatchRequest(request api.ConversionRequest) error {
+	// TODO : multipart post request
+	request.WorkerConversionID = "foobar"
+	worker.Requests = append(worker.Requests, &request)
+	log.Printf("[%s]:: received %s\n", worker.Name, request.ExternalConversionID)
+	return nil
+}
+
+func (worker *Worker) UpdateStatus() {
+	ip := worker.Info.NetworkSettings.IPAddress
+	baseUrl := fmt.Sprintf("http://%s:%d", ip, 3001)
+	for _, request := range worker.Requests {
+		resp, err := http.Get(fmt.Sprintf("%s/conversion/%s?v2=true", baseUrl, request.WorkerConversionID))
+		if err != nil {
+			request.ConversionStatus = err.Error()
+			continue
+		}
+		csr := api.ConversionStatusResponse{}
+
+		if err := json.NewDecoder(resp.Body).Decode(&csr); err != nil {
+			request.ConversionStatus = err.Error()
+			continue
+		}
+		request.ConversionStatus = csr.Status
+		fmt.Println(request.ConversionStatus)
+		resp.Body.Close()
+	}
+	for _, req := range worker.Requests {
+		log.Printf("[%s]:: %s => %s\n", worker.Name, req.ExternalConversionID, req.ConversionStatus)
+	}
+}
+
+func (worker *Worker) GetRequestCount() int {
+	return len(worker.Requests)
 }
