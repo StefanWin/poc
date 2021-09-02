@@ -1,7 +1,11 @@
 package api
 
 import (
+	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/google/uuid"
 )
@@ -20,8 +24,21 @@ func (api *Api) ConvertFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	// TODO : write file to input/<id>
 	id := uuid.New().String()
+
+	// TODO : write file to input/<id>
+	path := filepath.Join("./input", fmt.Sprintf("%s%s", id, srcFmt))
+	tFile, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0777)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer tFile.Close()
+	_, err = io.Copy(tFile, file)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
 	req := ConversionRequest{
 		ConversionRequestBody: ConversionRequestBody{
 			File:           []byte{}, // TODO : remove
@@ -34,7 +51,7 @@ func (api *Api) ConvertFileHandler(w http.ResponseWriter, r *http.Request) {
 		WorkerConversionID:   "",
 	}
 	// Send the request to the channel
-	api.RequestChannel <- req
+	api.RequestChannel <- &req
 	respondWithJSON(w, http.StatusOK, ConversionProcessingResponse{
 		ConversionID: id,
 	})

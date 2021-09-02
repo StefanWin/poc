@@ -13,10 +13,10 @@ type Api struct {
 	Router *mux.Router
 	Server *http.Server
 	// chan<- means write-only
-	RequestChannel chan<- ConversionRequest
+	RequestChannel chan<- *ConversionRequest
 }
 
-func NewApi(requestChannel chan<- ConversionRequest) (*Api, error) {
+func NewApi(requestChannel chan<- *ConversionRequest) (*Api, error) {
 	router := mux.NewRouter()
 	server := &http.Server{
 		Handler:      router,

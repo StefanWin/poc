@@ -9,7 +9,7 @@ import (
 // respondWithError sets the given status code and
 // transforms error into a JSON format.
 func respondWithError(w http.ResponseWriter, code int, err error) {
-	log.Printf("[API]:: %v\n", err)
+	log.Printf("[API]::ERROR:: %v\n", err)
 	respondWithJSON(w, code, map[string]string{"error": err.Error()})
 }
 

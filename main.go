@@ -29,7 +29,7 @@ func main() {
 	}
 
 	// global request channel
-	requestChannel := make(chan api.ConversionRequest, 50)
+	requestChannel := make(chan *api.ConversionRequest, 50)
 
 	scaler, err := scaler.NewScaler(requestChannel)
 	if err != nil {

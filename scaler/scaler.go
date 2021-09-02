@@ -13,7 +13,7 @@ import (
 
 type Scaler struct {
 	// <-chan means read-only
-	RequestChannel <-chan api.ConversionRequest
+	RequestChannel <-chan *api.ConversionRequest
 	Config         *ScalerConfig
 	DockerClient   *client.Client
 	Workers        []*Worker
@@ -21,7 +21,7 @@ type Scaler struct {
 	containerIndex int
 }
 
-func NewScaler(requestChannel <-chan api.ConversionRequest) (*Scaler, error) {
+func NewScaler(requestChannel <-chan *api.ConversionRequest) (*Scaler, error) {
 	config, err := NewScalerConfigFromEnv()
 	if err != nil {
 		return nil, err
@@ -75,10 +75,10 @@ func (scaler *Scaler) Start() error {
 	for scaler.isRunning {
 		// start, remove := scaler.Evaluate()
 		log.Println("=== Check =======================")
-		for _, worker := range scaler.Workers {
-			worker.Update(scaler.DockerClient)
-			if !worker.IsHealthy() {
-				log.Printf("[scaler]:: %s is unhealthy\n", worker.Name)
+		for i := range scaler.Workers {
+			scaler.Workers[i].Update(scaler.DockerClient)
+			if !scaler.Workers[i].IsHealthy() {
+				log.Printf("[scaler]:: %s is unhealthy\n", scaler.Workers[i].Name)
 				// TODO : remove unhealthy containers
 			}
 		}
@@ -86,29 +86,36 @@ func (scaler *Scaler) Start() error {
 		pendingRequests := len(scaler.RequestChannel)
 		log.Printf("[scaler]:: %d requests in queue\n", pendingRequests)
 		if pendingRequests > 0 {
-			idleWorkers := make([]*Worker, 0)
+			idleWorkerCount := 0
 			for _, worker := range scaler.Workers {
 				if worker.GetRequestCount() == 0 {
-					idleWorkers = append(idleWorkers, worker)
+					idleWorkerCount++
 				}
 			}
-			idleWorkerCount := len(idleWorkers)
 			log.Printf("[scaler]:: %d available idle workers\n", idleWorkerCount)
-			requests := make([]api.ConversionRequest, 0)
+			requests := make([]*api.ConversionRequest, 0)
 			for i := 0; i < idleWorkerCount-pendingRequests; i++ {
 				request := <-scaler.RequestChannel
 				requests = append(requests, request)
 			}
 			// TODO : dispatch requests to workers
-			for i, req := range requests {
-				idleWorkers[i].DispatchRequest(req)
+			for rIndex := range requests {
+				for wIndex := range scaler.Workers {
+					if scaler.Workers[wIndex].GetRequestCount() == 0 && scaler.Workers[wIndex].IsHealthy() {
+						err := scaler.Workers[wIndex].DispatchRequest(requests[rIndex])
+						if err != nil {
+							log.Println(err)
+						}
+						break
+					}
+				}
 			}
 			log.Printf("[scaler]:: dispatched %d requests to workers\n", len(requests))
 		}
 
 		// TODO : fetch status updates from workers
-		for _, worker := range scaler.Workers {
-			worker.UpdateStatus()
+		for i := range scaler.Workers {
+			scaler.Workers[i].UpdateStatus()
 		}
 		log.Println("[scaler]:: retrieved status updates from workers")
 
@@ -125,9 +132,9 @@ func (scaler *Scaler) Shutdown() {
 	count := len(scaler.Workers)
 	log.Printf("[scaler]:: removing %d workers\n", count)
 	var wg sync.WaitGroup
-	for _, worker := range scaler.Workers {
+	for i := range scaler.Workers {
 		wg.Add(1)
-		go worker.RemoveAsync(&wg, scaler.DockerClient)
+		go scaler.Workers[i].RemoveAsync(&wg, scaler.DockerClient)
 	}
 	wg.Wait()
 }
